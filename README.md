@@ -1,3 +1,5 @@
+> 🚧 Work in progress — shipping by end of week. Follow the commits to see progress.
+
 # Palet
 
 Extract dominant color palettes from film stills, photos, and design references. Export to Tailwind, CSS variables, SCSS, or JSON. Generate shareable cards.
