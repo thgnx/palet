@@ -1,9 +1,11 @@
 /**
  * extractor.js — Image → dominant color array.
- * Uses colorthief's named export API (v2.4+).
+ * Uses the ColorThief class (default export).
  */
 
-import { getPalette } from 'colorthief';
+import ColorThief from 'colorthief';
+
+const colorThief = new ColorThief();
 
 /**
  * Extract dominant colors from an image element.
@@ -12,15 +14,13 @@ import { getPalette } from 'colorthief';
  * @returns {Promise<Array<[number,number,number]>>}  RGB tuples
  */
 export async function extractColors(img, count = 6) {
-  const run = () => getPalette(img, count);
-
   if (img.complete && img.naturalWidth > 0) {
-    return run();
+    return colorThief.getPalette(img, count);
   }
 
   return new Promise((resolve, reject) => {
-    img.addEventListener('load', async () => {
-      try { resolve(await run()); }
+    img.addEventListener('load', () => {
+      try { resolve(colorThief.getPalette(img, count)); }
       catch (e) { reject(e); }
     }, { once: true });
     img.addEventListener('error', () => reject(new Error('Image failed to load')), { once: true });

@@ -3,11 +3,11 @@
  * Owns app state; delegates everything else to modules.
  */
 
-import { qs, qsa, toast, copyText, show, hide } from './modules/ui.js';
+import { qs, qsa, toast, copyText, show, hide, debounce, renderCode, relativeTime } from './modules/ui.js';
 import { extractColors } from './modules/extractor.js';
 import { FORMATS } from './modules/exporter.js';
-import { legibleTextColor } from './modules/contrast.js';
-import { getRecents, saveRecent } from './modules/storage.js';
+import { legibleTextColor, contrastRatio } from './modules/contrast.js';
+import { getRecents, saveRecent, removeRecent } from './modules/storage.js';
 import { generateShareCard } from './modules/shareCard.js';
 
 /* ── App State ───────────────────────────────────────────── */
@@ -51,6 +51,11 @@ function rgbToHex([r, g, b]) {
   return '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('');
 }
 
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
 function rgbToRgbStr([r, g, b]) { return `rgb(${r}, ${g}, ${b})`; }
 
 function rgbToHsl([r, g, b]) {
@@ -84,11 +89,11 @@ const MAX_BYTES = 10 * 1024 * 1024; // 10MB
 
 function validateFile(file) {
   if (!ALLOWED_TYPES.includes(file.type)) {
-    toast('Unsupported format. Use JPEG, PNG, or WebP.', 'error');
+    toast('Unsupported format. Please use JPEG, PNG, or WebP.', 'error');
     return false;
   }
   if (file.size > MAX_BYTES) {
-    toast('File must be smaller than 10MB.', 'error');
+    toast('File is too large. Maximum size is 10MB.', 'error');
     return false;
   }
   return true;
@@ -103,12 +108,29 @@ function readFile(file) {
 
 function loadImage(dataUrl) {
   state.imageDataUrl = dataUrl;
-  dom.previewImg.src = dataUrl;
-  // CrossOrigin needed for ColorThief canvas read
   dom.previewImg.crossOrigin = 'anonymous';
+  dom.previewImg.src = dataUrl;
   hide(dom.uploadSection);
   show(dom.workspace);
   runExtraction();
+}
+
+function loadRecent(entry) {
+  state.imageDataUrl = entry.thumbnail;
+  state.palette      = entry.colors.map(hexToRgb);
+  state.colorCount   = entry.colors.length;
+  state.shareCardUrl = null;
+  dom.colorSlider.value  = state.colorCount;
+  dom.colorOutput.value  = state.colorCount;
+  dom.previewImg.crossOrigin = 'anonymous';
+  dom.previewImg.src = entry.thumbnail;
+  hide(dom.uploadSection);
+  show(dom.workspace);
+  hide(dom.paletteSkeleton);
+  hide(dom.shareCardPreview);
+  renderSwatches();
+  renderExports();
+  document.title = `Palet — ${state.palette.length} colors extracted`;
 }
 
 /* ── Extraction ──────────────────────────────────────────── */
@@ -123,13 +145,14 @@ async function runExtraction() {
     hide(dom.paletteSkeleton);
     renderSwatches();
     renderExports();
+    document.title = `Palet — ${state.colorCount} colors extracted`;
     // Persist to recents after successful extraction
     const hexColors = colors.map(rgbToHex);
-    saveRecent(state.imageDataUrl, hexColors);
+    await saveRecent(state.imageDataUrl, hexColors);
     renderRecents();
   } catch {
     hide(dom.paletteSkeleton);
-    toast('Could not extract colors from this image.', 'error');
+    toast("Couldn't extract colors. Try a different image.", 'error');
   }
 }
 
@@ -137,9 +160,12 @@ async function runExtraction() {
 function renderSwatches() {
   dom.paletteSwatches.innerHTML = '';
   for (const rgb of state.palette) {
-    const hex     = rgbToHex(rgb);
-    const display = formatColor(rgb);
-    const textCol = legibleTextColor(rgb);
+    const hex          = rgbToHex(rgb);
+    const display      = formatColor(rgb);
+    const textCol      = legibleTextColor(rgb);
+    const wcagRatio    = contrastRatio(rgb, [255, 255, 255]);
+    const ratioDisplay = wcagRatio.toFixed(1) + ':1';
+    const aaClass      = wcagRatio >= 4.5 ? 'contrast-pass' : 'contrast-fail';
 
     const card = document.createElement('div');
     card.className = 'swatch-card';
@@ -148,9 +174,9 @@ function renderSwatches() {
     card.setAttribute('aria-label', `Color ${display}. Click to copy.`);
     card.innerHTML = `
       <div class="swatch-color" style="background:${hex}"></div>
-      <div class="swatch-info" style="background:rgba(0,0,0,0.45)">
+      <div class="swatch-info">
         <div class="swatch-hex" style="color:${textCol}">${display}</div>
-        <div class="swatch-copy-hint" style="color:${textCol}80">click to copy</div>
+        <div class="swatch-contrast ${aaClass}">${ratioDisplay}</div>
       </div>
     `;
 
@@ -166,16 +192,13 @@ function renderSwatches() {
 
 /* ── Export rendering ────────────────────────────────────── */
 function renderExports() {
-  const hexColors = state.palette.map(rgbToHex);
+  const isEmpty = !state.palette.length;
   for (const [format, fn] of Object.entries(FORMATS)) {
     const el = qs(`#code-${format} code`) ?? qs(`#code-${format}`);
-    if (el) el.textContent = fn(hexColors.map(h => {
-      // Pass RGB tuples to formatters that expect them
-      const r = parseInt(h.slice(1,3),16);
-      const g = parseInt(h.slice(3,5),16);
-      const b = parseInt(h.slice(5,7),16);
-      return [r,g,b];
-    }));
+    if (!el) continue;
+    el.innerHTML = isEmpty
+      ? '<span class="token-punct">// extract a palette first</span>'
+      : renderCode(fn(state.palette), format);
   }
 }
 
@@ -192,7 +215,7 @@ function renderRecents() {
     item.className = 'recent-item';
     item.setAttribute('role', 'listitem');
     item.setAttribute('tabindex', '0');
-    item.setAttribute('aria-label', `Recent palette from ${new Date(entry.timestamp).toLocaleDateString()}`);
+    item.setAttribute('aria-label', `Recent palette from ${relativeTime(entry.timestamp)}`);
 
     const swatchBar = entry.colors.map(c =>
       `<div class="recent-swatch" style="background:${c}"></div>`
@@ -201,10 +224,22 @@ function renderRecents() {
     item.innerHTML = `
       <img class="recent-thumb" src="${entry.thumbnail}" alt="Recent palette thumbnail" loading="lazy" />
       <div class="recent-swatches">${swatchBar}</div>
-      <div class="recent-date">${new Date(entry.timestamp).toLocaleDateString()}</div>
+      <div class="recent-date">${relativeTime(entry.timestamp)}</div>
     `;
 
-    const load = () => loadImage(entry.thumbnail);
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'recent-remove-btn';
+    removeBtn.setAttribute('aria-label', 'Remove this recent palette');
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeRecent(entry.id);
+      renderRecents();
+    });
+    item.appendChild(removeBtn);
+
+    const load = () => loadRecent(entry);
     item.addEventListener('click', load);
     item.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); load(); }
@@ -300,18 +335,25 @@ function wireControls() {
   dom.resetBtn.addEventListener('click', () => {
     state.imageDataUrl = null;
     state.palette = [];
-    dom.previewImg.src = '';
+    state.shareCardUrl = null;
+    dom.previewImg.removeAttribute('src');
+    dom.shareCardImg.removeAttribute('src');
     dom.paletteSwatches.innerHTML = '';
     hide(dom.workspace);
     show(dom.uploadSection);
     hide(dom.shareCardPreview);
+    document.title = 'Palet — Extract Color Palettes from Film Stills';
   });
 
-  // Color count slider
+  // Color count slider — update display immediately, debounce extraction
+  const debouncedExtract = debounce(() => {
+    if (state.imageDataUrl) runExtraction();
+  }, 300);
+
   dom.colorSlider.addEventListener('input', () => {
     state.colorCount = Number(dom.colorSlider.value);
     dom.colorOutput.value = state.colorCount;
-    if (state.imageDataUrl) runExtraction();
+    debouncedExtract();
   });
 
   // Format toggle
@@ -343,10 +385,11 @@ function wireControls() {
     });
   }
 
-  // Copy export code
+  // Copy export code — textContent strips span tags, giving clean code
   dom.copyExportBtn.addEventListener('click', () => {
     const codeEl = qs(`#code-${state.activeTab} code`) ?? qs(`#code-${state.activeTab}`);
-    if (codeEl?.textContent) copyText(codeEl.textContent, 'Code copied!');
+    const text = codeEl?.textContent?.trim();
+    if (text) copyText(text, 'Code copied!');
   });
 }
 
@@ -354,6 +397,7 @@ function wireShareCard() {
   dom.generateCardBtn.addEventListener('click', async () => {
     if (!state.palette.length) return;
     dom.generateCardBtn.disabled = true;
+    dom.generateCardBtn.classList.add('loading');
     dom.generateCardBtn.textContent = 'Generating…';
     try {
       const hexColors = state.palette.map(rgbToHex);
@@ -362,9 +406,10 @@ function wireShareCard() {
       dom.shareCardImg.src = dataUrl;
       show(dom.shareCardPreview);
     } catch {
-      toast('Could not generate share card.', 'error');
+      toast('Share card failed. Try again.', 'error');
     } finally {
       dom.generateCardBtn.disabled = false;
+      dom.generateCardBtn.classList.remove('loading');
       dom.generateCardBtn.textContent = 'Generate Share Card';
     }
   });
@@ -384,7 +429,7 @@ function wireShareCard() {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
       toast('Image copied to clipboard!', 'success');
     } catch {
-      toast('Copy image not supported in this browser.', 'error');
+      toast("Your browser doesn't support copying images. Download instead.", 'error');
     }
   });
 }
@@ -404,6 +449,15 @@ function wireKeyboard() {
           }
         }
       }).catch(() => {}); // Permission denied or no image — silently ignore
+    }
+
+    // Ctrl/Cmd+E — copy active export tab
+    if ((e.ctrlKey || e.metaKey) && e.key === 'e' && state.palette.length) {
+      e.preventDefault();
+      const codeEl = qs(`#code-${state.activeTab} code`) ?? qs(`#code-${state.activeTab}`);
+      const text = codeEl?.textContent?.trim();
+      const tabLabels = { tailwind: 'Tailwind', css: 'CSS', scss: 'SCSS', json: 'JSON' };
+      if (text) copyText(text, `${tabLabels[state.activeTab] ?? state.activeTab} copied!`);
     }
 
     // Esc — reset if workspace visible
