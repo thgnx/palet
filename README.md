@@ -39,12 +39,6 @@ npm install
 npm run dev
 ```
 
-## What I learned
-
-- ColorThief's newer API uses named exports — the docs haven't caught up yet
-- `html2canvas` needs exact pixel dimensions upfront; dynamic layouts break it
-- CSS custom properties + no framework = surprisingly maintainable for a tool like this
-
 ## License
 
 MIT © [Taha Genç](https://tahagenc.com)
