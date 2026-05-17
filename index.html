@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Palet — Extract Color Palettes from Film Stills</title>
+    <meta name="description" content="Extract dominant color palettes from film stills, photos, and design references. Export to Tailwind, CSS variables, SCSS, or JSON." />
+    <meta property="og:title" content="Palet" />
+    <meta property="og:description" content="Extract dominant color palettes from film stills and photos." />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:url" content="https://palet.tahagenc.com" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300;1,9..144,400&family=Geist+Mono:wght@400;500&family=Geist:wght@300;400;500&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+
+      <header class="site-header">
+        <a href="/" class="logo" aria-label="Palet — Home">
+          <span class="logo-mark">◈</span>
+          <span class="logo-text">Palet</span>
+        </a>
+        <nav class="header-nav">
+          <a href="https://tahagenc.com" target="_blank" rel="noopener" class="nav-link">by Taha</a>
+        </nav>
+      </header>
+
+      <main id="main-content">
+
+        <section class="upload-section" aria-labelledby="upload-heading">
+          <div class="upload-intro">
+            <h1 id="upload-heading">
+              <em>Extract</em> the palette<br />of any frame.
+            </h1>
+            <p class="upload-subtitle">Drop a film still, photo, or reference image. Get a shareable color palette in seconds.</p>
+          </div>
+
+          <div
+            id="dropzone"
+            class="dropzone"
+            role="button"
+            tabindex="0"
+            aria-label="Upload image. Drag and drop or click to browse. Supports JPEG, PNG, WebP up to 10MB."
+          >
+            <div class="dropzone-inner">
+              <div class="dropzone-icon" aria-hidden="true">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="4" y="8" width="32" height="24" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  <circle cx="14" cy="16" r="3" stroke="currentColor" stroke-width="1.5"/>
+                  <path d="M4 26l9-7 6 5 5-4 12 9" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  <path d="M20 4v10M17 7l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <p class="dropzone-primary">Drop an image here</p>
+              <p class="dropzone-secondary">or <button type="button" class="inline-btn" id="browse-btn">browse</button> &middot; paste with <kbd>Ctrl+V</kbd></p>
+              <p class="dropzone-formats">JPEG, PNG, WebP &middot; max 10MB</p>
+            </div>
+            <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" aria-hidden="true" tabindex="-1" />
+          </div>
+
+          <div class="samples-section" aria-labelledby="samples-heading">
+            <p id="samples-heading" class="samples-label">Try with an example</p>
+            <div class="samples-grid" id="samples-grid" role="list"></div>
+          </div>
+        </section>
+
+        <section class="workspace" id="workspace" aria-label="Palette workspace" hidden>
+
+          <div class="workspace-header">
+            <div class="image-preview-wrap">
+              <img id="preview-img" src="" alt="Uploaded image preview" class="preview-img" />
+              <button type="button" class="reset-btn" id="reset-btn" aria-label="Remove image and reset">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <div class="workspace-controls">
+              <label class="color-count-label" for="color-count-slider">
+                Colors: <output id="color-count-output" for="color-count-slider">6</output>
+              </label>
+              <input type="range" id="color-count-slider" min="3" max="12" value="6" step="1" aria-label="Number of colors to extract (3-12)" />
+            </div>
+          </div>
+
+          <div class="format-toggle" role="group" aria-label="Color format">
+            <button type="button" class="format-btn active" data-format="hex">HEX</button>
+            <button type="button" class="format-btn" data-format="rgb">RGB</button>
+            <button type="button" class="format-btn" data-format="hsl">HSL</button>
+          </div>
+
+          <div class="palette-wrap" id="palette-wrap" aria-live="polite" aria-label="Extracted color palette">
+            <div class="palette-skeleton" id="palette-skeleton" aria-hidden="true">
+              <div class="swatch-skeleton"></div>
+              <div class="swatch-skeleton"></div>
+              <div class="swatch-skeleton"></div>
+              <div class="swatch-skeleton"></div>
+              <div class="swatch-skeleton"></div>
+              <div class="swatch-skeleton"></div>
+            </div>
+            <div class="palette-swatches" id="palette-swatches" role="list"></div>
+          </div>
+
+          <section class="export-panel" aria-labelledby="export-heading">
+            <h2 id="export-heading" class="visually-hidden">Export palette</h2>
+            <div class="export-tabs" role="tablist" aria-label="Export format">
+              <button type="button" role="tab" class="tab-btn active" data-tab="tailwind" aria-selected="true" aria-controls="tab-tailwind">Tailwind</button>
+              <button type="button" role="tab" class="tab-btn" data-tab="css" aria-selected="false" aria-controls="tab-css">CSS Vars</button>
+              <button type="button" role="tab" class="tab-btn" data-tab="scss" aria-selected="false" aria-controls="tab-scss">SCSS</button>
+              <button type="button" role="tab" class="tab-btn" data-tab="json" aria-selected="false" aria-controls="tab-json">JSON</button>
+            </div>
+            <div class="export-content">
+              <div class="export-toolbar">
+                <button type="button" class="copy-export-btn" id="copy-export-btn" aria-label="Copy code to clipboard">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <rect x="4" y="4" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.25"/>
+                    <path d="M2 10V2h8" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+                  </svg>
+                  Copy
+                </button>
+              </div>
+              <div id="tab-tailwind" role="tabpanel" class="tab-panel active">
+                <pre class="code-block" id="code-tailwind"><code></code></pre>
+              </div>
+              <div id="tab-css" role="tabpanel" class="tab-panel" hidden>
+                <pre class="code-block" id="code-css"><code></code></pre>
+              </div>
+              <div id="tab-scss" role="tabpanel" class="tab-panel" hidden>
+                <pre class="code-block" id="code-scss"><code></code></pre>
+              </div>
+              <div id="tab-json" role="tabpanel" class="tab-panel" hidden>
+                <pre class="code-block" id="code-json"><code></code></pre>
+              </div>
+            </div>
+          </section>
+
+          <section class="share-section" aria-labelledby="share-heading">
+            <h2 id="share-heading" class="section-heading">Share</h2>
+            <div class="share-actions">
+              <button type="button" class="btn-primary" id="generate-card-btn">Generate Share Card</button>
+            </div>
+            <div class="share-card-preview" id="share-card-preview" hidden>
+              <img id="share-card-img" src="" alt="Share card preview" class="share-card-img" />
+              <div class="share-card-actions">
+                <button type="button" class="btn-secondary" id="download-card-btn">Download PNG</button>
+                <button type="button" class="btn-secondary" id="copy-card-btn">Copy Image</button>
+              </div>
+            </div>
+          </section>
+
+        </section>
+
+        <section class="recents-section" id="recents-section" aria-labelledby="recents-heading" hidden>
+          <h2 id="recents-heading" class="section-heading">Recent</h2>
+          <div class="recents-grid" id="recents-grid" role="list"></div>
+        </section>
+
+      </main>
+
+      <footer class="site-footer">
+        <p>
+          <a href="https://tahagenc.com" target="_blank" rel="noopener">Taha Genç</a>
+          <span class="separator">&middot;</span>
+          <a href="https://github.com/tahagenc/palet" target="_blank" rel="noopener">GitHub</a>
+          <span class="separator">&middot;</span>
+          MIT License
+        </p>
+      </footer>
+
+    </div>
+
+    <div class="toast-container" id="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
